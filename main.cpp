@@ -176,12 +176,15 @@ int main()
 	ci.setASTConsumer(astConsumer);
 
 	ci.createASTContext();
-	ci.createSema(clang::TU_Complete, NULL);
+	// ci.createSema(clang::TU_Complete, nullptr);
 
 	const clang::FileEntry* entry = ci.getFileManager().getFile("test.cpp");
 	ci.getSourceManager().createMainFileID(entry);
 
-	clang::ParseAST(ci.getSema());
+	// clang::ParseAST(ci.getSema());
+	ci.getDiagnosticClient().BeginSourceFile(ci.getLangOpts(), &ci.getPreprocessor());
+	clang::ParseAST(ci.getPreprocessor(), &ci.getASTConsumer(), ci.getASTContext());
+	ci.getDiagnosticClient().EndSourceFile();
 
 	return 0;
 }
