@@ -77,6 +77,7 @@ class MyASTVisitor : public clang::RecursiveASTVisitor<MyASTVisitor>
 
 						cout << "Call from: " << callingFunction << " -> " << calledFunction << "()" << endl;
 						graphOut << "\t" << callingFunction << " -> " << calledFunction << endl;
+						graphOut.flush();
 						break;
 					}
 				}
@@ -155,10 +156,6 @@ int main()
 	clang::CompilerInstance ci;
     clang::CompilerInvocation::setLangDefaults(ci.getLangOpts(), clang::IK_CXX, clang::LangStandard::lang_gnucxx11);
 
-	ci.getDiagnosticOpts().Warnings.push_back("fatal-errors");
-    for(auto warning : ci.getDiagnosticOpts().Warnings)
-        cout << warning << endl;
-
 	ci.createDiagnostics();
 
 	llvm::IntrusiveRefCntPtr<clang::TargetOptions> pto(new clang::TargetOptions());
@@ -188,14 +185,13 @@ int main()
 	ci.setASTConsumer(astConsumer);
 
 	ci.createASTContext();
-	// ci.createSema(clang::TU_Complete, nullptr);
+	ci.createSema(clang::TU_Complete, nullptr);
 
-	const clang::FileEntry* entry = ci.getFileManager().getFile("test.cpp");
+	const clang::FileEntry* entry = ci.getFileManager().getFile("main.cpp");
 	ci.getSourceManager().createMainFileID(entry);
 
-	// clang::ParseAST(ci.getSema());
 	ci.getDiagnosticClient().BeginSourceFile(ci.getLangOpts(), &ci.getPreprocessor());
-	clang::ParseAST(ci.getPreprocessor(), &ci.getASTConsumer(), ci.getASTContext(), true);
+	clang::ParseAST(ci.getSema());
 	ci.getDiagnosticClient().EndSourceFile();
 
 	return 0;
