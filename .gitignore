@@ -2,4 +2,6 @@
 bin
 obj
 *.depend
+*.png
+*.gv
 core
