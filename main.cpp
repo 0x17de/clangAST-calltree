@@ -1,11 +1,13 @@
 #include <iostream>
 #include <stdexcept>
 #include <list>
+#include <fstream>
 
 #include <llvm/Support/Host.h>
 #include <clang/Basic/TargetInfo.h>
 #include <clang/Basic/TargetOptions.h>
 #include <clang/Basic/ABI.h>
+#include <clang/Basic/LangOptions.h>
 #include <clang/Parse/ParseAST.h>
 #include <clang/Frontend/CompilerInstance.h>
 #include <clang/Frontend/Utils.h>
@@ -31,13 +33,18 @@ class MyASTVisitor : public clang::RecursiveASTVisitor<MyASTVisitor>
 {
 	public:
 		MyASTVisitor()
+			:
+			graphOut("graph.gv")
 		{
+			graphOut << "digraph prof {" << endl;
+		}
+		virtual ~MyASTVisitor()
+		{
+			graphOut << "}" << endl;
 		}
 
 		bool TraverseDecl(clang::Decl* D)
 		{
-			if (!D)
-				return false;
 			declList.push_back(D);
 			// cout << "+DECL: " << D->getDeclKindName() << endl;
 			bool result = clang::RecursiveASTVisitor<MyASTVisitor>::TraverseDecl(D);
@@ -48,33 +55,31 @@ class MyASTVisitor : public clang::RecursiveASTVisitor<MyASTVisitor>
 
 		bool TraverseStmt(clang::Stmt* S)
 		{
-			if (!S)
-				return false;
 			// cout << "+STMT: " << S->getStmtClassName() << endl;
-			bool result = clang::RecursiveASTVisitor<MyASTVisitor>::TraverseStmt(S);
+			return clang::RecursiveASTVisitor<MyASTVisitor>::TraverseStmt(S);
 			// cout << "-STMT: " << S->getStmtClassName() << endl;
-			return result;
 		}
 
 		bool VisitStmt(clang::Stmt* s)
 		{
 			if (clang::isa<clang::CallExpr>(s))
 			{
+				clang::CallExpr* c = (clang::CallExpr*)s;
 				for (auto it = declList.rbegin(); it != declList.rend(); ++it)
 				{
 					clang::Decl* d = *it;
 					if (d->getKind() == clang::Decl::Function)
 					{
 						clang::NamedDecl* n = (clang::NamedDecl*)d;
-						cout << "Call from: " << n->getNameAsString() << endl;
+
+						string callingFunction = n->getNameAsString();
+						string calledFunction = c->getDirectCallee()->getNameInfo().getName().getAsString();
+
+						cout << "Call from: " << callingFunction << " -> " << calledFunction << "()" << endl;
+						graphOut << "\t" << callingFunction << " -> " << calledFunction << endl;
 						break;
 					}
 				}
-
-				clang::CallExpr* c = (clang::CallExpr*)s;
-				cout << c->getDirectCallee()->getNameInfo().getName().getAsString();
-				cout << "()";
-				cout << endl;
 			}
 			return true;
 		}
@@ -91,6 +96,8 @@ class MyASTVisitor : public clang::RecursiveASTVisitor<MyASTVisitor>
 	private:
 		list<clang::Decl*> declList;
 		list<clang::Stmt*> stmtList;
+
+		ofstream graphOut;
 };
 
 class MyASTConsumer : public clang::ASTConsumer
@@ -139,13 +146,18 @@ class MyCommentHandler : public clang::CommentHandler
 
 class MyPPCallbacks : public clang::PPCallbacks
 {
-    // @TODO: not possible in these callbacks: skip some module imports
-    // InclusionDirective (SourceLocation HashLoc, const Token &IncludeTok, StringRef FileName, bool IsAngled, CharSourceRange FilenameRange, const FileEntry *File, StringRef SearchPath, StringRef RelativePath, const Module *Imported)
+		// @TODO: not possible in these callbacks: skip some module imports
+		// InclusionDirective (SourceLocation HashLoc, const Token &IncludeTok, StringRef FileName, bool IsAngled, CharSourceRange FilenameRange, const FileEntry *File, StringRef SearchPath, StringRef RelativePath, const Module *Imported)
 };
 
 int main()
 {
 	clang::CompilerInstance ci;
+    clang::CompilerInvocation::setLangDefaults(ci.getLangOpts(), clang::IK_CXX, clang::LangStandard::lang_gnucxx11);
+
+	ci.getDiagnosticOpts().Warnings.push_back("fatal-errors");
+    for(auto warning : ci.getDiagnosticOpts().Warnings)
+        cout << warning << endl;
 
 	ci.createDiagnostics();
 
@@ -158,7 +170,7 @@ int main()
 	ci.createSourceManager(ci.getFileManager());
 
 	ci.getHeaderSearchOpts().ResourceDir = "/usr/lib/clang/" CLANG_VERSION_STRING;
-	ci.getHeaderSearchOpts().AddPath("/usr/lib/gcc/x86_64-pc-linux-gnu/4.8.2/include", clang::frontend::System, false, false);
+	// ci.getHeaderSearchOpts().AddPath("/usr/lib/gcc/x86_64-pc-linux-gnu/4.8.2/include", clang::frontend::System, false, false);
 	ci.getHeaderSearchOpts().AddPath("/usr/lib/gcc/x86_64-pc-linux-gnu/4.8.2/include/g++-v4", clang::frontend::System, false, false);
 	ci.getHeaderSearchOpts().AddPath("/usr/lib/gcc/x86_64-pc-linux-gnu/4.8.2/include/g++-v4/x86_64-pc-linux-gnu", clang::frontend::System, false, false);
 	ci.getHeaderSearchOpts().AddPath("/usr/lib/gcc/x86_64-pc-linux-gnu/4.8.2/include/g++-v4/backward", clang::frontend::System, false, false);
@@ -169,7 +181,7 @@ int main()
 	ci.createPreprocessor();
 
 	// ci.getPreprocessor().addPPCallbacks(new MyPPCallbacks());
-	ci.getPreprocessor().addCommentHandler(new MyCommentHandler());
+	// ci.getPreprocessor().addCommentHandler(new MyCommentHandler()); // @TODO: not yet, prints unnecessary stuff
 	// ci.getPreprocessorOpts().UsePredefines = false;
 
 	clang::ASTConsumer* astConsumer = new MyASTConsumer();
@@ -183,7 +195,7 @@ int main()
 
 	// clang::ParseAST(ci.getSema());
 	ci.getDiagnosticClient().BeginSourceFile(ci.getLangOpts(), &ci.getPreprocessor());
-	clang::ParseAST(ci.getPreprocessor(), &ci.getASTConsumer(), ci.getASTContext());
+	clang::ParseAST(ci.getPreprocessor(), &ci.getASTConsumer(), ci.getASTContext(), true);
 	ci.getDiagnosticClient().EndSourceFile();
 
 	return 0;
