@@ -1,4 +1,10 @@
-#include <iostream>
+//#include <iostream>
+
+class T {
+	void t(int c) {
+		return c;
+	}
+};
 
 int test2(int a) {
 	// this is complicated
@@ -15,6 +21,10 @@ int test() {
 
 int main()
 {
+	test();
+	test();
+	T t;
+	t.t(3);
 	return test();
 }
 

@@ -1,9 +1,13 @@
 #include <iostream>
 #include <stdexcept>
+#include <string>
+#include <sstream>
 #include <list>
 #include <fstream>
 
+#include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Host.h>
+
 #include <clang/Basic/TargetInfo.h>
 #include <clang/Basic/TargetOptions.h>
 #include <clang/Basic/ABI.h>
@@ -14,10 +18,12 @@
 
 #include <clang/AST/ASTContext.h>
 #include <clang/AST/ASTConsumer.h>
+
+#include <clang/AST/Decl.h>
 #include <clang/AST/DeclCXX.h>
 #include <clang/AST/DeclGroup.h>
 #include <clang/AST/Expr.h>
-#include <clang/AST/Decl.h>
+#include <clang/AST/ExprCXX.h>
 
 #include <clang/Basic/Version.h>
 
@@ -39,6 +45,7 @@ class MyASTVisitor : public clang::RecursiveASTVisitor<MyASTVisitor>
 			graphOut("graph.dot")
 		{
 			graphOut << "digraph prof {" << endl;
+			// graphOut << "\tnode [shape=box];" << endl;
 		}
 
 		virtual ~MyASTVisitor()
@@ -62,40 +69,70 @@ class MyASTVisitor : public clang::RecursiveASTVisitor<MyASTVisitor>
 
 		bool VisitStmt(clang::Stmt* stmt)
 		{
-			if (clang::isa<clang::CallExpr>(stmt))
+		    string directCalleeName;
+            unsigned int srcStart, srcEnd;
+
+            clang::FileID fid = ci.getSourceManager().getMainFileID();
+            srcStart = ci.getSourceManager().getLocForStartOfFile(fid).getRawEncoding();
+            srcEnd = ci.getSourceManager().getLocForEndOfFile(fid).getRawEncoding();
+
+		    if (clang::isa<clang::CXXMemberCallExpr>(stmt))
+            {
+                clang::CXXMemberCallExpr* c = (clang::CXXMemberCallExpr*)stmt;
+                clang::CXXRecordDecl* rd = c->getRecordDecl();
+                clang::CXXMethodDecl* md = c->getMethodDecl();
+                if (!rd || !md)
+                    return true;
+
+                if (c->getSourceRange().getBegin().getRawEncoding() < srcStart
+                    || c->getSourceRange().getEnd().getRawEncoding() > srcEnd)
+                    return true;
+
+                stringstream ss;
+                ss << rd->getNameAsString() << "::" << md->getNameAsString();
+                directCalleeName = ss.str();
+            }
+			else if (clang::isa<clang::CallExpr>(stmt))
 			{
-				clang::CallExpr* c = (clang::CallExpr*)stmt;
+                clang::CallExpr* c = (clang::CallExpr*)stmt;
+                clang::FunctionDecl* fn = c->getDirectCallee();
+                if (!fn)
+                    return true;
 
-				unsigned int srcStart, srcEnd;
-				clang::FileID fid = ci.getSourceManager().getMainFileID();
-				srcStart = ci.getSourceManager().getLocForStartOfFile(fid).getRawEncoding();
-				srcEnd = ci.getSourceManager().getLocForEndOfFile(fid).getRawEncoding();
+                if (c->getSourceRange().getBegin().getRawEncoding() < srcStart
+                    || c->getSourceRange().getEnd().getRawEncoding() > srcEnd)
+                    return true;
 
-				if (c->getSourceRange().getBegin().getRawEncoding() >= srcStart
-						&& c->getSourceRange().getEnd().getRawEncoding() <= srcEnd)
-				{
-					const clang::FunctionDecl* fn = c->getDirectCallee();
-					if (fn)
-					{
-						for (auto it = declStack.rbegin(); it != declStack.rend(); ++it)
-						{
-							clang::Decl* d = *it;
-							if (clang::isa<clang::NamedDecl>(d))
-							{
-								graphOut << "\t";
-
-								clang::NamedDecl* n = (clang::NamedDecl*)d;
-								graphOut << "_id_" << getId(n->getNameAsString()) << " -> ";
-
-								const clang::DeclarationNameInfo& nameInfo = fn->getNameInfo();
-								graphOut << "_id_" << getId(nameInfo.getAsString()) << endl;
-
-								break;
-							}
-						}
-					}
-				}
+                directCalleeName = fn->getNameInfo().getAsString();
 			}
+			else
+            {
+                return true;
+            }
+
+            for (auto it = declStack.rbegin(); it != declStack.rend(); ++it)
+            {
+                clang::Decl* d = *it;
+                if (clang::isa<clang::FunctionDecl>(d)
+                        && clang::isa<clang::NamedDecl>(d))
+                {
+                    clang::NamedDecl* n = (clang::NamedDecl*)d;
+
+                    stringstream ssCxn;
+
+                    ssCxn << "_id_" << getId(n->getNameAsString()) << " -> " << "_id_" << getId(directCalleeName);
+                    string sCxn = ssCxn.str();
+
+                    if (cxnSet.find(sCxn) == cxnSet.end())
+                    {
+                        cxnSet.insert(sCxn);
+                        graphOut << "\t" << sCxn << endl;
+                        cout << n->getNameAsString() << " -> " << directCalleeName << endl;
+                    }
+
+                    break;
+                }
+            }
 			return true;
 		}
 
@@ -107,14 +144,17 @@ class MyASTVisitor : public clang::RecursiveASTVisitor<MyASTVisitor>
 
 		int getId(const string& str)
 		{
-			if (idMap.find(str) == idMap.end())
-				idMap.insert({str, ++lastId});
+		    auto it = idMap.find(str);
+		    if (it != idMap.end())
+                return it->second;
+            idMap.insert({str, ++lastId});
 			return lastId;
 		}
 
 	private:
 		clang::CompilerInstance& ci;
 		map<string, int> idMap;
+		set<string> cxnSet;
 		int lastId;
 		list<clang::Decl*> declStack;
 		ofstream graphOut;
