@@ -208,8 +208,8 @@ class MyCommentHandler : public clang::CommentHandler
 
 class MyPPCallbacks : public clang::PPCallbacks
 {
-		// @TODO: not possible in these callbacks: skip some module imports
-		// InclusionDirective (SourceLocation HashLoc, const Token &IncludeTok, StringRef FileName, bool IsAngled, CharSourceRange FilenameRange, const FileEntry *File, StringRef SearchPath, StringRef RelativePath, const Module *Imported)
+	// @TODO: not possible in these callbacks: skip some module imports
+	// InclusionDirective (SourceLocation HashLoc, const Token &IncludeTok, StringRef FileName, bool IsAngled, CharSourceRange FilenameRange, const FileEntry *File, StringRef SearchPath, StringRef RelativePath, const Module *Imported)
 };
 
 int main()
@@ -230,7 +230,7 @@ int main()
 	ci.getHeaderSearchOpts().ResourceDir = LLVM_PREFIX "/lib/clang/" CLANG_VERSION_STRING;
 	cout << "Resorce dir: " << ci.getHeaderSearchOpts().ResourceDir << endl;
 
-	ci.getHeaderSearchOpts().AddPath("/usr/lib/clang/" CLANG_VERSION_STRING "/include", clang::frontend::CXXSystem, false, false);
+	ci.getHeaderSearchOpts().AddPath(LLVM_PREFIX "/lib/clang/" CLANG_VERSION_STRING "/include", clang::frontend::CXXSystem, false, false);
 	ci.getHeaderSearchOpts().AddPath("/usr/lib/gcc/x86_64-pc-linux-gnu/4.8.2/include/g++-v4", clang::frontend::CXXSystem, false, false);
 	ci.getHeaderSearchOpts().AddPath("/usr/lib/gcc/x86_64-pc-linux-gnu/4.8.2/include/g++-v4/x86_64-pc-linux-gnu", clang::frontend::CXXSystem, false, false);
 	ci.getHeaderSearchOpts().AddPath("/usr/lib/gcc/x86_64-pc-linux-gnu/4.8.2/include/g++-v4/backward", clang::frontend::CXXSystem, false, false);
@@ -248,7 +248,6 @@ int main()
 	// ci.getPreprocessorOpts().UsePredefines = false;
 
 	clang::ASTConsumer* astConsumer = new MyASTConsumer(ci);
-	// clang::ASTConsumer* astConsumer = new clang::ASTConsumer();
 	ci.setASTConsumer(astConsumer);
 
 	// ci.getDiagnosticOpts().Warnings.clear();
