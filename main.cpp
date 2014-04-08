@@ -32,79 +32,100 @@ using namespace std;
 class MyASTVisitor : public clang::RecursiveASTVisitor<MyASTVisitor>
 {
 	public:
-		MyASTVisitor()
+		MyASTVisitor(clang::CompilerInstance& ci)
 			:
-			graphOut("graph.gv")
+			ci(ci),
+			lastId(0),
+			graphOut("graph.dot")
 		{
 			graphOut << "digraph prof {" << endl;
 		}
+
 		virtual ~MyASTVisitor()
 		{
-			graphOut << "}" << endl;
-		}
-
-		bool TraverseDecl(clang::Decl* D)
-		{
-			declList.push_back(D);
-			// cout << "+DECL: " << D->getDeclKindName() << endl;
-			bool result = clang::RecursiveASTVisitor<MyASTVisitor>::TraverseDecl(D);
-			// cout << "-DECL: " << D->getDeclKindName() << endl;
-			declList.pop_back();
-			return result;
-		}
-
-		bool TraverseStmt(clang::Stmt* S)
-		{
-			// cout << "+STMT: " << S->getStmtClassName() << endl;
-			return clang::RecursiveASTVisitor<MyASTVisitor>::TraverseStmt(S);
-			// cout << "-STMT: " << S->getStmtClassName() << endl;
-		}
-
-		bool VisitStmt(clang::Stmt* s)
-		{
-			if (clang::isa<clang::CallExpr>(s))
+			for (auto p : idMap)
 			{
-				clang::CallExpr* c = (clang::CallExpr*)s;
-				for (auto it = declList.rbegin(); it != declList.rend(); ++it)
+				graphOut << "_id_" << p.second << "[label=\"" << p.first << "\"]" << endl;
+			}
+			graphOut << "}" << endl;
+			graphOut.close();
+		}
+
+		bool TraverseDecl(clang::Decl* d)
+		{
+			declStack.push_back(d);
+			bool res = clang::RecursiveASTVisitor<MyASTVisitor>::TraverseDecl(d);
+			declStack.pop_back();
+
+			return res;
+		}
+
+		bool VisitStmt(clang::Stmt* stmt)
+		{
+			if (clang::isa<clang::CallExpr>(stmt))
+			{
+				clang::CallExpr* c = (clang::CallExpr*)stmt;
+
+				unsigned int srcStart, srcEnd;
+				clang::FileID fid = ci.getSourceManager().getMainFileID();
+				srcStart = ci.getSourceManager().getLocForStartOfFile(fid).getRawEncoding();
+				srcEnd = ci.getSourceManager().getLocForEndOfFile(fid).getRawEncoding();
+
+				if (c->getSourceRange().getBegin().getRawEncoding() >= srcStart
+						&& c->getSourceRange().getEnd().getRawEncoding() <= srcEnd)
 				{
-					clang::Decl* d = *it;
-					if (d->getKind() == clang::Decl::Function)
+					const clang::FunctionDecl* fn = c->getDirectCallee();
+					if (fn)
 					{
-						clang::NamedDecl* n = (clang::NamedDecl*)d;
+						for (auto it = declStack.rbegin(); it != declStack.rend(); ++it)
+						{
+							clang::Decl* d = *it;
+							if (clang::isa<clang::NamedDecl>(d))
+							{
+								graphOut << "\t";
 
-						string callingFunction = n->getNameAsString();
-						string calledFunction = c->getDirectCallee()->getNameInfo().getName().getAsString();
+								clang::NamedDecl* n = (clang::NamedDecl*)d;
+								graphOut << "_id_" << getId(n->getNameAsString()) << " -> ";
 
-						cout << "Call from: " << callingFunction << " -> " << calledFunction << "()" << endl;
-						graphOut << "\t" << callingFunction << " -> " << calledFunction << endl;
-						graphOut.flush();
-						break;
+								const clang::DeclarationNameInfo& nameInfo = fn->getNameInfo();
+								graphOut << "_id_" << getId(nameInfo.getAsString()) << endl;
+
+								break;
+							}
+						}
 					}
 				}
 			}
 			return true;
 		}
 
-		bool VisitFunctionDecl(clang::Decl* d)
+		bool VisitFunctionDecl(clang::Decl* decl)
 		{
-			if (clang::isa<clang::NamedDecl>(d))
-			{
-				clang::NamedDecl* n = (clang::NamedDecl*)d;
-				cout << "FunctionDecl: " << n->getNameAsString() << endl;
-			}
+			// cout << "decl" << endl;
 			return true;
 		}
-	private:
-		list<clang::Decl*> declList;
-		list<clang::Stmt*> stmtList;
 
+		int getId(const string& str)
+		{
+			if (idMap.find(str) == idMap.end())
+				idMap.insert({str, ++lastId});
+			return lastId;
+		}
+
+	private:
+		clang::CompilerInstance& ci;
+		map<string, int> idMap;
+		int lastId;
+		list<clang::Decl*> declStack;
 		ofstream graphOut;
 };
 
 class MyASTConsumer : public clang::ASTConsumer
 {
 	public:
-		MyASTConsumer()
+		MyASTConsumer(clang::CompilerInstance& ci)
+			:
+			visitor(ci)
 		{
 		}
 
@@ -186,7 +207,7 @@ int main()
 	// ci.getPreprocessor().addCommentHandler(new MyCommentHandler()); // @TODO: not yet, prints unnecessary stuff
 	// ci.getPreprocessorOpts().UsePredefines = false;
 
-	clang::ASTConsumer* astConsumer = new MyASTConsumer();
+	clang::ASTConsumer* astConsumer = new MyASTConsumer(ci);
 	// clang::ASTConsumer* astConsumer = new clang::ASTConsumer();
 	ci.setASTConsumer(astConsumer);
 
