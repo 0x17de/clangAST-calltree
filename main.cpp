@@ -154,7 +154,7 @@ class MyPPCallbacks : public clang::PPCallbacks
 int main()
 {
 	clang::CompilerInstance ci;
-    clang::CompilerInvocation::setLangDefaults(ci.getLangOpts(), clang::IK_CXX, clang::LangStandard::lang_gnucxx11);
+	ci.getInvocation().setLangDefaults(ci.getLangOpts(), clang::IK_CXX, clang::LangStandard::lang_cxx11);
 
 	ci.createDiagnostics();
 
@@ -166,23 +166,32 @@ int main()
 	ci.createFileManager();
 	ci.createSourceManager(ci.getFileManager());
 
-	ci.getHeaderSearchOpts().ResourceDir = "/usr/lib/clang/" CLANG_VERSION_STRING;
-	// ci.getHeaderSearchOpts().AddPath("/usr/lib/gcc/x86_64-pc-linux-gnu/4.8.2/include", clang::frontend::System, false, false);
-	ci.getHeaderSearchOpts().AddPath("/usr/lib/gcc/x86_64-pc-linux-gnu/4.8.2/include/g++-v4", clang::frontend::System, false, false);
-	ci.getHeaderSearchOpts().AddPath("/usr/lib/gcc/x86_64-pc-linux-gnu/4.8.2/include/g++-v4/x86_64-pc-linux-gnu", clang::frontend::System, false, false);
-	ci.getHeaderSearchOpts().AddPath("/usr/lib/gcc/x86_64-pc-linux-gnu/4.8.2/include/g++-v4/backward", clang::frontend::System, false, false);
-	ci.getHeaderSearchOpts().AddPath("/usr/lib/clang/" CLANG_VERSION_STRING "/include", clang::frontend::System, false, false);
-	ci.getHeaderSearchOpts().AddPath("/usr/local/include", clang::frontend::System, false, false);
-	ci.getHeaderSearchOpts().AddPath("/usr/include", clang::frontend::System, false, false);
+	ci.getHeaderSearchOpts().ResourceDir = LLVM_PREFIX "/lib/clang/" CLANG_VERSION_STRING;
+	cout << "Resorce dir: " << ci.getHeaderSearchOpts().ResourceDir << endl;
+
+	ci.getHeaderSearchOpts().AddPath("/usr/lib/clang/" CLANG_VERSION_STRING "/include", clang::frontend::CXXSystem, false, false);
+	ci.getHeaderSearchOpts().AddPath("/usr/lib/gcc/x86_64-pc-linux-gnu/4.8.2/include/g++-v4", clang::frontend::CXXSystem, false, false);
+	ci.getHeaderSearchOpts().AddPath("/usr/lib/gcc/x86_64-pc-linux-gnu/4.8.2/include/g++-v4/x86_64-pc-linux-gnu", clang::frontend::CXXSystem, false, false);
+	ci.getHeaderSearchOpts().AddPath("/usr/lib/gcc/x86_64-pc-linux-gnu/4.8.2/include/g++-v4/backward", clang::frontend::CXXSystem, false, false);
+	ci.getHeaderSearchOpts().AddPath("/usr/local/include", clang::frontend::CXXSystem, false, false);
+	ci.getHeaderSearchOpts().AddPath("/usr/include", clang::frontend::CXXSystem, false, false);
+
+	ci.getPreprocessorOpts().addMacroDef("__STDC_LIMIT_MACROS");
+	ci.getPreprocessorOpts().addMacroDef("__STDC_CONSTANT_MACROS");
 
 	ci.createPreprocessor();
+	ci.getPreprocessor().getBuiltinInfo().InitializeBuiltins(ci.getPreprocessor().getIdentifierTable(), ci.getLangOpts());
 
 	// ci.getPreprocessor().addPPCallbacks(new MyPPCallbacks());
 	// ci.getPreprocessor().addCommentHandler(new MyCommentHandler()); // @TODO: not yet, prints unnecessary stuff
 	// ci.getPreprocessorOpts().UsePredefines = false;
 
 	clang::ASTConsumer* astConsumer = new MyASTConsumer();
+	// clang::ASTConsumer* astConsumer = new clang::ASTConsumer();
 	ci.setASTConsumer(astConsumer);
+
+	// ci.getDiagnosticOpts().Warnings.clear();
+	ci.getDiagnosticOpts().Warnings.push_back("fatal-errors");
 
 	ci.createASTContext();
 	ci.createSema(clang::TU_Complete, nullptr);
