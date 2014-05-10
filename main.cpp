@@ -16,6 +16,7 @@
 #include <clang/Frontend/CompilerInstance.h>
 #include <clang/Frontend/Utils.h>
 
+#include <clang/AST/RecursiveASTVisitor.h>
 #include <clang/AST/ASTContext.h>
 #include <clang/AST/ASTConsumer.h>
 
